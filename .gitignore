@@ -1,0 +1,68 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
+
+# IDE и редакторы
+*.iml
+*.ipr
+*.iws
+.idea/
+*.gradle/
+*.cxx/
+*.vs/
+*.vscode/
+
+# Flutter / Dart / Code generation
+.dart_tool/
+build/
+**/doc/api/
+.pub/
+pubspec.lock  # Не включаем в библиотеку
+
+# Кодогенерация (build_runner)
+generated/
+**/*.g.dart
+**/*.freezed.dart
+**/*.mocks.dart
+
+# Тестовое покрытие
+coverage/
+
+# Логи и временные файлы
+*.log
+*.pid
+*.seed
+*.pid.lock
+crashlytics/
+
+# Windows специфические файлы
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# macOS специфические файлы
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux специфические файлы
+*~  # Vim и Emacs временные файлы
+.nfs*
+
+# Web специфические файлы
+/web-build/
+firebase.json
+firestore.rules
+storage.rules
+
+# Docker / CI (если потребуется)
+.dockerignore
+*.dockerfile
