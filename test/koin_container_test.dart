@@ -8,7 +8,9 @@ class ApiService {
 void main() {
   test('Регистрация и получение глобальной зависимости', () {
     final container = KoinContainer();
-    container.registerSingleton<ApiService>(ApiService());
+
+    // 🟢 Регистрация ApiService перед get<ApiService>()
+    container.registerFactory<ApiService>(() => ApiService());
 
     final apiService = container.get<ApiService>();
     expect(apiService.fetchData(), "Data from API");

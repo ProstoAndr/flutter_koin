@@ -1,17 +1,11 @@
 import 'koin_container.dart';
 
 class KoinModule {
-  final List<void Function(KoinContainer)> _bindings = [];
+  final List<void Function(KoinContainer)> _registrations = [];
 
-  /// Добавление зависимости в модуль
-  void register(void Function(KoinContainer) binding) {
-    _bindings.add(binding);
+  void register(void Function(KoinContainer) callback) {
+    _registrations.add(callback);
   }
 
-  /// Регистрация всех зависимостей в переданный KoinContainer
-  void load(KoinContainer container) {
-    for (var binding in _bindings) {
-      binding(container);
-    }
-  }
+  List<void Function(KoinContainer)> get registrations => _registrations;
 }

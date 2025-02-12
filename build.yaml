@@ -1,0 +1,14 @@
+targets:
+  $default:
+    builders:
+      flutter_koin:koin_generator:
+        enabled: true
+
+builders:
+  koin_generator:
+    import: "package:flutter_koin/src/generator/koin_generator.dart"
+    builder_factories: ["koinGeneratorFactory"]
+    build_extensions:
+      ".dart": [".koin.dart"]
+    auto_apply: dependents
+    build_to: source

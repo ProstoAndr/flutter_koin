@@ -1,50 +1,65 @@
+import 'koin_module.dart';
 import 'koin_scope.dart';
 
 class KoinContainer {
-  final Map<Type, dynamic> _singletonDependencies = {};
   final Map<Type, dynamic Function()> _factoryDependencies = {};
+  final Map<Type, dynamic Function()> _scopedFactories = {};
+
   final Map<String, KoinScope> _scopes = {};
 
-  /// Регистрация глобальной зависимости (всё время одна и та же)
-  void registerSingleton<T>(T instance) {
-    _singletonDependencies[T] = instance;
-  }
-
-  /// Регистрация фабрики (новый объект при каждом запросе)
+  // Factory
   void registerFactory<T>(T Function() creator) {
     _factoryDependencies[T] = creator;
   }
 
-  /// Создание нового scope
+  // Scoped
+  void registerScoped<T>(T Function() creator) {
+    _scopedFactories[T] = creator;
+  }
+
+  bool hasScoped<T>() => _scopedFactories.containsKey(T);
+
+  T createScopedInstance<T>() {
+    final creator = _scopedFactories[T];
+    if (creator == null) {
+      throw Exception("No scoped factory found for type $T");
+    }
+    return creator() as T;
+  }
+
+  // Создать scope
   KoinScope createScope(String name) {
-    final scope = KoinScope(name);
+    final scope = KoinScope(name, this);
     _scopes[name] = scope;
     return scope;
   }
 
-  /// Получение scope по имени
-  KoinScope getScope(String name) {
-    if (!_scopes.containsKey(name)) {
-      throw Exception("Scope '$name' not found.");
-    }
-    return _scopes[name]!;
-  }
-
-  /// Удаление scope
+  // Удалить scope
   void deleteScope(String name) {
     _scopes.remove(name);
   }
 
-  /// Получение зависимости
-  T get<T>() {
-    if (_singletonDependencies.containsKey(T)) {
-      return _singletonDependencies[T] as T;
+  // Доступ к scope по имени
+  KoinScope getScope(String name) {
+    final scope = _scopes[name];
+    if (scope == null) {
+      throw Exception("Scope $name not found");
     }
+    return scope;
+  }
 
+  // get без scope => Factory (или Singleton, если захотите)
+  T get<T>() {
     if (_factoryDependencies.containsKey(T)) {
       return _factoryDependencies[T]!() as T;
     }
+    throw Exception("$T not found in factory dependencies");
+  }
 
-    throw Exception("Dependency of type $T not found.");
+  // Загружаем модуль (по факту список колбэков)
+  void loadModule(KoinModule module) {
+    for (final cb in module.registrations) {
+      cb(this);
+    }
   }
 }

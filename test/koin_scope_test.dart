@@ -8,32 +8,38 @@ class ApiService {
 void main() {
   test('Scoped зависимости работают независимо', () {
     final container = KoinContainer();
+
+    // Регистрируем scoped-зависимость в контейнере
+    container.registerScoped<ApiService>(() => ApiService());
+
+    // Создаём два независимых scope
     final scope1 = container.createScope("Screen1");
     final scope2 = container.createScope("Screen2");
 
-    scope1.register<ApiService>(() => ApiService());
-    scope2.register<ApiService>(() => ApiService());
-
+    // Получаем ApiService в каждом scope (впервые -> создастся)
     final service1 = scope1.get<ApiService>();
     final service2 = scope2.get<ApiService>();
 
+    // Проверяем, что объекты разные
     expect(service1 != service2, true);
   });
 
   test('Удаление scope удаляет зависимости', () {
     final container = KoinContainer();
+
+    container.registerScoped<ApiService>(() => ApiService());
+
     final scopeName = "TempScope";
     final scope = container.createScope(scopeName);
 
-    scope.register<ApiService>(() => ApiService());
-
+    // Получаем scoped-зависимость
     final service = scope.get<ApiService>();
     expect(service.fetchData(), "Data from API");
 
     // Удаляем scope
     container.deleteScope(scopeName);
 
-    // Проверяем, что доступ к scope вызывает ошибку
+    // Теперь при попытке обратиться к этому scope:
     expect(() => container.getScope(scopeName), throwsException);
   });
 }

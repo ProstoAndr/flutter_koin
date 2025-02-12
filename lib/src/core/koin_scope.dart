@@ -1,24 +1,28 @@
+import 'koin_container.dart';
+
 class KoinScope {
   final String name;
-  final Map<Type, dynamic> _dependencies = {};
+  final KoinContainer _container;
+  final Map<Type, dynamic> _cachedObjects = {};
 
-  KoinScope(this.name);
+  KoinScope(this.name, this._container);
 
-  /// Регистрация зависимости внутри scope
-  void register<T>(T Function() creator) {
-    _dependencies[T] = creator();
-  }
-
-  /// Получение зависимости
   T get<T>() {
-    if (!_dependencies.containsKey(T)) {
-      throw Exception("Dependency of type $T not found in scope '$name'.");
+    // Если уже есть кэш
+    if (_cachedObjects.containsKey(T)) {
+      return _cachedObjects[T] as T;
     }
-    return _dependencies[T] as T;
+    // Иначе создаём
+    if (_container.hasScoped<T>()) {
+      final instance = _container.createScopedInstance<T>();
+      _cachedObjects[T] = instance;
+      return instance;
+    }
+    // Если нет
+    throw Exception("Dependency of type $T not found in scope '$name'.");
   }
 
-  /// Очистка всех зависимостей внутри scope
   void clear() {
-    _dependencies.clear();
+    _cachedObjects.clear();
   }
 }
