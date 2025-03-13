@@ -10,5 +10,5 @@ builders:
     builder_factories: ["koinGeneratorFactory"]
     build_extensions:
       ".dart": [".koin.dart"]
-    auto_apply: dependents
     build_to: source
+    auto_apply: dependents
