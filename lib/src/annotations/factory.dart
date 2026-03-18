@@ -1,4 +1,7 @@
-/// Аннотация для фабричной зависимости (новый объект при каждом запросе).
+/// Annotation for factory dependencies.
+/// A new object is created on every request.
 class Factory {
-  const Factory();
+  final List<Type> bindAs;
+
+  const Factory({this.bindAs = const []});
 }

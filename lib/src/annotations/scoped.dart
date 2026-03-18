@@ -1,4 +1,7 @@
-/// Аннотация для scoped зависимости (живет в рамках scope).
+/// Annotation for scoped dependencies.
+/// One object lives inside one scope.
 class Scoped {
-  const Scoped();
+  final List<Type> bindAs;
+
+  const Scoped({this.bindAs = const []});
 }

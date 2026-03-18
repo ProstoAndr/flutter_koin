@@ -1,13 +1,15 @@
 import 'dart:async';
+
+import 'package:analyzer/dart/constant/value.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/dart/element/type.dart';
 import 'package:build/build.dart';
 import 'package:source_gen/source_gen.dart';
+
 import '../annotations/factory.dart';
 import '../annotations/root_scoped.dart';
 import '../annotations/scoped.dart';
 
-/// Класс-генератор, который ищет @Factory() и @Scoped() в коде,
-/// и генерирует .koin.dart со строками registerFactory / registerScoped.
 class KoinGenerator extends Generator {
   static final TypeChecker _factoryChecker = TypeChecker.typeNamed(
     Factory,
@@ -33,7 +35,10 @@ class KoinGenerator extends Generator {
       library: library,
     );
 
-    _collectScopedRegistrations(registrations: registrations, library: library);
+    _collectScopedRegistrations(
+      registrations: registrations,
+      library: library,
+    );
 
     _collectRootScopedRegistrations(
       registrations: registrations,
@@ -83,13 +88,18 @@ class KoinGenerator extends Generator {
         continue;
       }
 
+      final bindAsTypes = _readBindAsTypes(annotated.annotation);
+      final bindAsArgument = _buildBindAsArgument(bindAsTypes);
+
       final invocation = _buildConstructorInvocation(
         className,
         constructor,
         resolverName: 'c',
       );
 
-      registrations.add('c.registerFactory<$className>(() => $invocation)');
+      registrations.add(
+        'c.registerFactory<$className>(() => $invocation$bindAsArgument)',
+      );
     }
   }
 
@@ -113,6 +123,9 @@ class KoinGenerator extends Generator {
         continue;
       }
 
+      final bindAsTypes = _readBindAsTypes(annotated.annotation);
+      final bindAsArgument = _buildBindAsArgument(bindAsTypes);
+
       final needsScope = _constructorHasInjectableParameters(constructor);
 
       final invocation = _buildConstructorInvocation(
@@ -123,10 +136,12 @@ class KoinGenerator extends Generator {
 
       if (needsScope) {
         registrations.add(
-          'c.registerScopedWithScope<$className>((scope) => $invocation)',
+          'c.registerScopedWithScope<$className>((scope) => $invocation$bindAsArgument)',
         );
       } else {
-        registrations.add('c.registerScoped<$className>(() => $invocation)');
+        registrations.add(
+          'c.registerScoped<$className>(() => $invocation$bindAsArgument)',
+        );
       }
     }
   }
@@ -151,14 +166,53 @@ class KoinGenerator extends Generator {
         continue;
       }
 
+      final bindAsTypes = _readBindAsTypes(annotated.annotation);
+      final bindAsArgument = _buildBindAsArgument(bindAsTypes);
+
       final invocation = _buildConstructorInvocation(
         className,
         constructor,
         resolverName: 'c',
       );
 
-      registrations.add('c.registerRootScoped<$className>(() => $invocation)');
+      registrations.add(
+        'c.registerRootScoped<$className>(() => $invocation$bindAsArgument)',
+      );
     }
+  }
+
+  List<String> _readBindAsTypes(ConstantReader annotationReader) {
+    final bindAsReader = annotationReader.peek('bindAs');
+    if (bindAsReader == null || bindAsReader.isNull) {
+      return const [];
+    }
+
+    final result = <String>[];
+
+    for (final constantValue in bindAsReader.listValue) {
+      final dartType = constantValue.toTypeValue();
+      if (dartType == null) {
+        continue;
+      }
+
+      final typeName = dartType.getDisplayString();
+      if (typeName.isEmpty) {
+        continue;
+      }
+
+      result.add(typeName);
+    }
+
+    return result;
+  }
+
+  String _buildBindAsArgument(List<String> bindAsTypes) {
+    if (bindAsTypes.isEmpty) {
+      return '';
+    }
+
+    final joinedTypes = bindAsTypes.join(', ');
+    return ', bindAs: [$joinedTypes]';
   }
 
   bool _canGenerateForConstructor(ConstructorElement constructor) {
@@ -184,6 +238,7 @@ class KoinGenerator extends Generator {
         return true;
       }
     }
+
     return false;
   }
 
@@ -194,35 +249,43 @@ class KoinGenerator extends Generator {
   }
 
   String _buildConstructorInvocation(
-    String className,
-    ConstructorElement constructor, {
-    required String resolverName,
-  }) {
-    final positionalArgs = <String>[];
-    final namedArgs = <String>[];
+      String className,
+      ConstructorElement constructor, {
+        required String resolverName,
+      }) {
+    final positionalArguments = <String>[];
+    final namedArguments = <String>[];
 
     for (final parameter in constructor.formalParameters) {
       if (parameter.isRequiredPositional) {
-        positionalArgs.add(_buildGetCall(parameter, resolverName));
+        positionalArguments.add(_buildGetCall(parameter, resolverName));
       } else if (parameter.isRequiredNamed) {
-        namedArgs.add(
+        namedArguments.add(
           '${parameter.name}: ${_buildGetCall(parameter, resolverName)}',
         );
       }
     }
 
-    if (positionalArgs.isEmpty && namedArgs.isEmpty) {
+    if (positionalArguments.isEmpty && namedArguments.isEmpty) {
       return '$className()';
     }
 
-    final args = <String>[...positionalArgs, ...namedArgs];
+    final arguments = <String>[
+      ...positionalArguments,
+      ...namedArguments,
+    ];
 
-    final joinedArgs = args.map((arg) => '      $arg').join(',\n');
+    final joinedArguments = arguments
+        .map((argument) => '      $argument')
+        .join(',\n');
 
-    return '$className(\n$joinedArgs,\n    )';
+    return '$className(\n$joinedArguments,\n    )';
   }
 
-  String _buildGetCall(FormalParameterElement parameter, String resolverName) {
+  String _buildGetCall(
+      FormalParameterElement parameter,
+      String resolverName,
+      ) {
     final typeName = parameter.type.getDisplayString();
     return '$resolverName.get<$typeName>()';
   }

@@ -25,6 +25,7 @@ migrate_working_dir/
 build/
 **/doc/api/
 .pub/
+exemple_test
 pubspec.lock  # Не включаем в библиотеку
 
 # Кодогенерация (build_runner)

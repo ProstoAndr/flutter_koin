@@ -1,5 +1,7 @@
-/// Аннотация для root scoped зависимости
-/// (один объект на весь жизненный цикл root scope).
+/// Annotation for root-scoped dependencies.
+/// One object lives for the whole container lifecycle.
 class RootScoped {
-  const RootScoped();
+  final List<Type> bindAs;
+
+  const RootScoped({this.bindAs = const []});
 }
