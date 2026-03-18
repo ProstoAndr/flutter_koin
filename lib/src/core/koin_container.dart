@@ -125,6 +125,14 @@ class KoinContainer implements KoinDisposable {
     return _scopedAliases[requestedType] ?? requestedType;
   }
 
+  bool has<T>() => hasByType(T);
+
+  bool hasByType(Type requestedType) {
+    return hasScopedType(requestedType) ||
+        hasRootScopedType(requestedType) ||
+        hasFactoryType(requestedType);
+  }
+
   bool hasFactory<T>() => hasFactoryType(T);
 
   bool hasRootScoped<T>() => hasRootScopedType(T);
@@ -234,6 +242,14 @@ class KoinContainer implements KoinDisposable {
   }
 
   T get<T>() => _scopeRegistry.rootScope.get<T>();
+
+  T? tryGet<T>() {
+    if (!has<T>()) {
+      return null;
+    }
+
+    return get<T>();
+  }
 
   T getFactory<T>() => getFactoryByType(T) as T;
 

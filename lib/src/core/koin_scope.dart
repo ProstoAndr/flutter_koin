@@ -122,6 +122,34 @@ class KoinScope implements KoinDisposable {
     );
   }
 
+  T? tryGet<T>() {
+    if (!has<T>()) {
+      return null;
+    }
+
+    return get<T>();
+  }
+
+  bool has<T>() => hasByType(T);
+
+  bool hasByType(Type requestedType) {
+    if (isFeature) {
+      if (_container.hasScopedType(requestedType)) {
+        return true;
+      }
+
+      final parentScope = _parent;
+      if (parentScope != null) {
+        return parentScope.hasByType(requestedType);
+      }
+
+      return false;
+    }
+
+    return _container.hasRootScopedType(requestedType) ||
+        _container.hasFactoryType(requestedType);
+  }
+
   String _buildDependencyNotFoundMessage(Type requestedType) {
     final resolvedScopedType = _container.resolveScopedType(requestedType);
     final resolvedRootScopedType = _container.resolveRootScopedType(

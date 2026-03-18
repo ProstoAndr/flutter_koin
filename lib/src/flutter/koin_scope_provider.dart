@@ -43,4 +43,6 @@ extension KoinScopeBuildContextX on BuildContext {
   KoinScope? get maybeKoinScope => KoinScopeProvider.maybeOf(this);
 
   T scopeGet<T>() => koinScope.get<T>();
+
+  T? scopeTryGet<T>() => koinScope.tryGet<T>();
 }

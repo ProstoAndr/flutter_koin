@@ -23,6 +23,10 @@ KoinContainer startKoin(List<KoinModule> modules) {
 
 T get<T>() => koinContainer.get<T>();
 
+T? tryGet<T>() => koinContainer.tryGet<T>();
+
+bool has<T>() => koinContainer.has<T>();
+
 KoinScope get rootScope => koinContainer.rootScope;
 
 KoinScope createScope(String name) => koinContainer.createScope(name);
