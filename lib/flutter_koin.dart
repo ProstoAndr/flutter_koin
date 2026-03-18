@@ -7,6 +7,7 @@ export 'src/annotations/root_scoped.dart';
 export 'src/core/koin_container.dart';
 export 'src/core/koin_module.dart';
 export 'src/core/koin_scope.dart';
+export 'src/core/errors/koin_exceptions.dart';
 
 export 'src/core/lifecycle/koin_disposable.dart';
 export 'src/core/lifecycle/scope_observer.dart';

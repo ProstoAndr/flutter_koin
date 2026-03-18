@@ -1,3 +1,4 @@
+import 'errors/koin_exceptions.dart';
 import 'koin_container.dart';
 import 'lifecycle/koin_disposable.dart';
 
@@ -72,41 +73,111 @@ class KoinScope implements KoinDisposable {
 
         return scopedValue as T;
       }
-    }
 
-    if (isRoot) {
-      final resolvedRootScopedType = _container.resolveRootScopedType(
-        requestedType,
-      );
-
-      if (_cachedObjects.containsKey(resolvedRootScopedType)) {
-        return _cachedObjects[resolvedRootScopedType] as T;
-      }
-
-      if (_container.hasRootScopedType(requestedType)) {
-        final rootScopedValue = _container.createRootScopedValueByType(
-          requestedType,
-        );
-        final disposer = _container.getRootScopedDisposerByType(requestedType);
-
-        _cacheValue(
-          cacheKey: resolvedRootScopedType,
-          value: rootScopedValue,
-          disposer: disposer,
-        );
-
-        return rootScopedValue as T;
-      }
-    }
-
-    if (isFeature) {
       final parentScope = _parent;
       if (parentScope != null) {
-        return parentScope.get<T>();
+        try {
+          return parentScope.get<T>();
+        } on KoinDependencyNotFoundException {
+          throw KoinDependencyNotFoundException(
+            _buildDependencyNotFoundMessage(requestedType),
+          );
+        }
       }
+
+      throw KoinDependencyNotFoundException(
+        _buildDependencyNotFoundMessage(requestedType),
+      );
     }
 
-    return _container.getFactoryByType(requestedType) as T;
+    final resolvedRootScopedType = _container.resolveRootScopedType(
+      requestedType,
+    );
+
+    if (_cachedObjects.containsKey(resolvedRootScopedType)) {
+      return _cachedObjects[resolvedRootScopedType] as T;
+    }
+
+    if (_container.hasRootScopedType(requestedType)) {
+      final rootScopedValue = _container.createRootScopedValueByType(
+        requestedType,
+      );
+      final disposer = _container.getRootScopedDisposerByType(requestedType);
+
+      _cacheValue(
+        cacheKey: resolvedRootScopedType,
+        value: rootScopedValue,
+        disposer: disposer,
+      );
+
+      return rootScopedValue as T;
+    }
+
+    if (_container.hasFactoryType(requestedType)) {
+      return _container.getFactoryByType(requestedType) as T;
+    }
+
+    throw KoinDependencyNotFoundException(
+      _buildDependencyNotFoundMessage(requestedType),
+    );
+  }
+
+  String _buildDependencyNotFoundMessage(Type requestedType) {
+    final resolvedScopedType = _container.resolveScopedType(requestedType);
+    final resolvedRootScopedType = _container.resolveRootScopedType(
+      requestedType,
+    );
+    final resolvedFactoryType = _container.resolveFactoryType(requestedType);
+
+    final hasScopedRegistration = _container.hasScopedType(requestedType);
+    final hasRootScopedRegistration = _container.hasRootScopedType(
+      requestedType,
+    );
+    final hasFactoryRegistration = _container.hasFactoryType(requestedType);
+
+    final buffer = StringBuffer()
+      ..writeln('Dependency "$requestedType" was not found.')
+      ..writeln(
+        'Current scope: "$name" (${isRoot ? 'root' : 'feature'}).',
+      );
+
+    if (isFeature) {
+      buffer
+        ..writeln('Lookup order:')
+        ..writeln(
+          '1. feature scope -> ${_formatResolvedType(requestedType, resolvedScopedType)} '
+              '(registered: $hasScopedRegistration)',
+        )
+        ..writeln(
+          '2. root scope -> ${_formatResolvedType(requestedType, resolvedRootScopedType)} '
+              '(registered: $hasRootScopedRegistration)',
+        )
+        ..writeln(
+          '3. factory -> ${_formatResolvedType(requestedType, resolvedFactoryType)} '
+              '(registered: $hasFactoryRegistration)',
+        );
+    } else {
+      buffer
+        ..writeln('Lookup order:')
+        ..writeln(
+          '1. root scope -> ${_formatResolvedType(requestedType, resolvedRootScopedType)} '
+              '(registered: $hasRootScopedRegistration)',
+        )
+        ..writeln(
+          '2. factory -> ${_formatResolvedType(requestedType, resolvedFactoryType)} '
+              '(registered: $hasFactoryRegistration)',
+        );
+    }
+
+    return buffer.toString().trimRight();
+  }
+
+  String _formatResolvedType(Type requestedType, Type resolvedType) {
+    if (requestedType == resolvedType) {
+      return '$resolvedType';
+    }
+
+    return '$requestedType -> $resolvedType';
   }
 
   void _cacheValue({

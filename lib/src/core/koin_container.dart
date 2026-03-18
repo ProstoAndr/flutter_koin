@@ -1,3 +1,4 @@
+import 'errors/koin_exceptions.dart';
 import 'koin_module.dart';
 import 'koin_scope.dart';
 import 'lifecycle/koin_disposable.dart';
@@ -26,6 +27,7 @@ class KoinContainer implements KoinDisposable {
         List<Type> bindAs = const [],
       }) {
     _factoryDependencies[T] = creator;
+
     _registerAliases(
       concreteType: T,
       aliases: bindAs,
@@ -48,7 +50,7 @@ class KoinContainer implements KoinDisposable {
       concreteType: T,
       aliases: bindAs,
       aliasMap: _rootScopedAliases,
-      registrationKind: 'rootScoped',
+      registrationKind: 'root scoped',
     );
   }
 
@@ -101,8 +103,9 @@ class KoinContainer implements KoinDisposable {
 
       final existingType = aliasMap[aliasType];
       if (existingType != null && existingType != concreteType) {
-        throw Exception(
-          '$registrationKind alias "$aliasType" is already bound to "$existingType".',
+        throw KoinAliasConflictException(
+          'Cannot bind alias "$aliasType" to "$concreteType". '
+              'It is already bound to "$existingType" in $registrationKind registrations.',
         );
       }
 
@@ -152,7 +155,10 @@ class KoinContainer implements KoinDisposable {
     final registration = _rootScopedFactories[resolvedType];
 
     if (registration == null) {
-      throw Exception('No root scoped factory found for type $requestedType');
+      throw KoinDependencyNotFoundException(
+        'Root-scoped dependency "$requestedType" was not found. '
+            'Resolved type: "$resolvedType".',
+      );
     }
 
     return registration.creator();
@@ -182,7 +188,11 @@ class KoinContainer implements KoinDisposable {
     final registration = _scopedFactories[resolvedType];
 
     if (registration == null) {
-      throw Exception('No scoped factory found for type $requestedType');
+      throw KoinDependencyNotFoundException(
+        'Scoped dependency "$requestedType" was not found. '
+            'Resolved type: "$resolvedType". '
+            'Scope: "${scope.name}".',
+      );
     }
 
     return registration.create(scope);
@@ -232,7 +242,10 @@ class KoinContainer implements KoinDisposable {
     final creator = _factoryDependencies[resolvedType];
 
     if (creator == null) {
-      throw Exception('$requestedType not found in factory dependencies');
+      throw KoinDependencyNotFoundException(
+        'Factory dependency "$requestedType" was not found. '
+            'Resolved type: "$resolvedType".',
+      );
     }
 
     return creator();
