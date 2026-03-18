@@ -13,13 +13,16 @@ part of 'main.dart';
 // *************************************************
 
 final koinModule = KoinModule()
-  ..register((c) => c.registerFactory<ReceiptFactory>(() => ReceiptFactory()))
-  ..register((c) => c.registerScoped<TableSession>(() => TableSession()))
-  ..register(
-      (c) => c.registerScopedWithScope<TableService>((scope) => TableService(
-            scope.get<CoffeeShopInfo>(),
-            scope.get<TableSession>(),
-            receiptFactory: scope.get<ReceiptFactory>(),
-          )))
-  ..register(
-      (c) => c.registerRootScoped<CoffeeShopInfo>(() => CoffeeShopInfo()));
+  ..register((c) => c.registerFactory<ReceiptFactory>(() => ReceiptFactory(),
+      bindAs: [ReceiptGenerator]))
+  ..register((c) => c.registerScoped<TableSession>(() => TableSession(),
+      bindAs: [TableSessionContract]))
+  ..register((c) => c.registerScopedWithScope<TableService>(
+          (scope) => TableService(
+        scope.get<ShopInfoRepository>(),
+        scope.get<TableSessionContract>(),
+        receiptGenerator: scope.get<ReceiptGenerator>(),
+      ),
+      bindAs: [TableOrderService]))
+  ..register((c) => c.registerRootScoped<CoffeeShopInfo>(() => CoffeeShopInfo(),
+      bindAs: [ShopInfoRepository]));

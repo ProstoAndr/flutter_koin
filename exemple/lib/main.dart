@@ -8,49 +8,83 @@ void main() {
   runApp(const KoinDemoApp());
 }
 
-@RootScoped()
-class CoffeeShopInfo {
+abstract class ShopInfoRepository {
+  int get id;
+  String get title;
+  String get address;
+}
+
+abstract class ReceiptGenerator {
+  int get id;
+  String createReceipt();
+}
+
+abstract class TableSessionContract {
+  int get id;
+  String get label;
+}
+
+abstract class TableOrderService {
+  int get id;
+  String describeOrder();
+}
+
+@RootScoped(bindAs: [ShopInfoRepository])
+class CoffeeShopInfo implements ShopInfoRepository {
   CoffeeShopInfo() : id = _Ids.next();
 
+  @override
   final int id;
 
+  @override
   String get title => 'Aurora Coffee';
+
+  @override
   String get address => '7 Bean Street';
 }
 
-@Factory()
-class ReceiptFactory {
+@Factory(bindAs: [ReceiptGenerator])
+class ReceiptFactory implements ReceiptGenerator {
   ReceiptFactory() : id = _Ids.next();
 
+  @override
   final int id;
 
+  @override
   String createReceipt() => 'receipt-$id';
 }
 
-@Scoped()
-class TableSession {
+@Scoped(bindAs: [TableSessionContract])
+class TableSession implements TableSessionContract {
   TableSession() : id = _Ids.next();
 
+  @override
   final int id;
 
+  @override
   String get label => 'session-$id';
 }
 
-@Scoped()
-class TableService {
+@Scoped(bindAs: [TableOrderService])
+class TableService implements TableOrderService {
   TableService(
-      this.shopInfo,
-      this.tableSession, {
-        required this.receiptFactory,
+      this.shopInfoRepository,
+      this.tableSessionContract, {
+        required this.receiptGenerator,
       }) : id = _Ids.next();
 
+  @override
   final int id;
-  final CoffeeShopInfo shopInfo;
-  final TableSession tableSession;
-  final ReceiptFactory receiptFactory;
 
+  final ShopInfoRepository shopInfoRepository;
+  final TableSessionContract tableSessionContract;
+  final ReceiptGenerator receiptGenerator;
+
+  @override
   String describeOrder() {
-    return '${shopInfo.title} • ${tableSession.label} • ${receiptFactory.createReceipt()}';
+    return '${shopInfoRepository.title} • '
+        '${tableSessionContract.label} • '
+        '${receiptGenerator.createReceipt()}';
   }
 }
 
@@ -75,11 +109,12 @@ class HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final infoA = get<CoffeeShopInfo>();
-    final infoB = get<CoffeeShopInfo>();
+    final shopByConcrete = get<CoffeeShopInfo>();
+    final shopByAlias = get<ShopInfoRepository>();
 
-    final factoryA = get<ReceiptFactory>();
-    final factoryB = get<ReceiptFactory>();
+    final receiptFactoryA = get<ReceiptFactory>();
+    final receiptFactoryB = get<ReceiptFactory>();
+    final receiptByAlias = get<ReceiptGenerator>();
 
     return Scaffold(
       appBar: AppBar(
@@ -92,25 +127,29 @@ class HomePage extends StatelessWidget {
           const _InfoCard(
             title: 'This example uses annotations',
             description:
-            'The module is generated from @RootScoped, @Factory and @Scoped classes.',
+            'The module is generated from @RootScoped, @Factory and @Scoped classes.\n'
+                'It also demonstrates bindAs aliases and constructor injection.',
           ),
           const SizedBox(height: 12),
           _InfoCard(
-            title: 'RootScoped',
+            title: 'RootScoped + bindAs',
             description:
-            'CoffeeShopInfo is shared across the whole app.\n'
-                'Same instance: ${identical(infoA, infoB)}\n'
-                'Shop id: ${infoA.id}\n'
-                'Shop: ${infoA.title}',
+            'CoffeeShopInfo is registered as ShopInfoRepository.\n'
+                'Concrete and alias return the same instance: '
+                '${identical(shopByConcrete, shopByAlias)}\n'
+                'Shop id: ${shopByConcrete.id}\n'
+                'Shop: ${shopByConcrete.title}',
           ),
           const SizedBox(height: 12),
           _InfoCard(
-            title: 'Factory',
+            title: 'Factory + bindAs',
             description:
-            'ReceiptFactory creates a new object every time.\n'
-                'New instance each call: ${!identical(factoryA, factoryB)}\n'
-                'Factory A receipt: ${factoryA.createReceipt()}\n'
-                'Factory B receipt: ${factoryB.createReceipt()}',
+            'ReceiptFactory is registered as ReceiptGenerator.\n'
+                'Concrete creates a new instance every time: '
+                '${!identical(receiptFactoryA, receiptFactoryB)}\n'
+                'Factory A receipt: ${receiptFactoryA.createReceipt()}\n'
+                'Factory B receipt: ${receiptFactoryB.createReceipt()}\n'
+                'Alias resolves to runtime type: ${receiptByAlias.runtimeType}',
           ),
           const SizedBox(height: 20),
           FilledButton(
@@ -142,14 +181,14 @@ class TablePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sessionA = context.scopeGet<TableSession>();
-    final sessionB = context.scopeGet<TableSession>();
+    final sessionByConcrete = context.scopeGet<TableSession>();
+    final sessionByAlias = context.scopeGet<TableSessionContract>();
 
-    final serviceA = context.scopeGet<TableService>();
-    final serviceB = context.scopeGet<TableService>();
+    final serviceByConcrete = context.scopeGet<TableService>();
+    final serviceByAlias = context.scopeGet<TableOrderService>();
 
-    final shopFromScope = context.scopeGet<CoffeeShopInfo>();
-    final shopGlobal = get<CoffeeShopInfo>();
+    final shopByAlias = context.scopeGet<ShopInfoRepository>();
+    final shopByConcrete = get<CoffeeShopInfo>();
 
     return Scaffold(
       appBar: AppBar(
@@ -159,30 +198,34 @@ class TablePage extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: [
           _InfoCard(
-            title: 'Scoped',
+            title: 'Scoped + bindAs',
             description:
-            'TableSession is reused inside one scope.\n'
-                'Same instance in this page: ${identical(sessionA, sessionB)}\n'
-                'Session id: ${sessionA.id}\n'
-                'Label: ${sessionA.label}',
+            'TableSession is registered as TableSessionContract.\n'
+                'Concrete and alias return the same scoped instance: '
+                '${identical(sessionByConcrete, sessionByAlias)}\n'
+                'Session id: ${sessionByConcrete.id}\n'
+                'Label: ${sessionByConcrete.label}',
           ),
           const SizedBox(height: 12),
           _InfoCard(
             title: 'Root fallback',
             description:
             'A scoped page can still resolve root-scoped dependencies.\n'
-                'Same root object: ${identical(shopFromScope, shopGlobal)}\n'
-                'Shop id: ${shopFromScope.id}\n'
-                'Address: ${shopFromScope.address}',
+                'Concrete and alias point to the same root object: '
+                '${identical(shopByAlias, shopByConcrete)}\n'
+                'Shop id: ${shopByConcrete.id}\n'
+                'Address: ${shopByConcrete.address}',
           ),
           const SizedBox(height: 12),
           _InfoCard(
-            title: 'Constructor injection',
+            title: 'Constructor injection via aliases',
             description:
-            'TableService is generated with injected dependencies.\n'
-                'Same service in this scope: ${identical(serviceA, serviceB)}\n'
-                'Service id: ${serviceA.id}\n'
-                'Order preview: ${serviceA.describeOrder()}',
+            'TableService is registered as TableOrderService.\n'
+                'Its constructor depends on interfaces, not concrete classes.\n'
+                'Concrete and alias return the same scoped instance: '
+                '${identical(serviceByConcrete, serviceByAlias)}\n'
+                'Service id: ${serviceByConcrete.id}\n'
+                'Order preview: ${serviceByConcrete.describeOrder()}',
           ),
         ],
       ),
