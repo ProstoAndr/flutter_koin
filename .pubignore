@@ -1,0 +1,12 @@
+# Integration test application
+example_test/
+
+# Local and generated files
+.dart_tool/
+build/
+coverage/
+.idea/
+.vscode/
+*.iml
+.flutter-plugins
+.flutter-plugins-dependencies
