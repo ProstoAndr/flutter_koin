@@ -4,9 +4,9 @@ description: A lightweight dependency injection library for Flutter with code ge
 
 version: 1.0.0
 
-# homepage: https://github.com/ProstoAndr/flutter_koin
-# repository: https://github.com/ProstoAndr/flutter_koin
-# issue_tracker: https://github.com/ProstoAndr/flutter_koin/issues
+homepage: https://github.com/ProstoAndr/flutter_koin
+repository: https://github.com/ProstoAndr/flutter_koin
+issue_tracker: https://github.com/ProstoAndr/flutter_koin/issues
 
 topics:
   - dependency-injection
