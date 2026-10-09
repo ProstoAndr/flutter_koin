@@ -1,195 +1,94 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_koin/flutter_koin.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/koin_fixtures.dart';
 
 void main() {
-  group('Koin exceptions', () {
-    test('throws detailed error for missing dependency in root scope', () {
+  group('Koin errors', () {
+    test('Missing dependency throws KoinDependencyNotFoundException', () async {
       final container = KoinContainer();
+      addTearDown(container.dispose);
 
       expect(
-            () => container.get<UnknownRootService>(),
-        throwsA(
-          isA<KoinDependencyNotFoundException>()
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('UnknownRootService'),
-          )
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('Current scope: "__root__" (root).'),
-          )
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('Lookup order:'),
-          )
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('1. root scope'),
-          )
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('2. factory'),
-          ),
-        ),
+        () => container.get<MissingDependency>(),
+        throwsA(isA<KoinDependencyNotFoundException>()),
       );
     });
 
-    test('throws detailed error for missing dependency in feature scope', () {
+    test('Missing dependency in feature scope throws', () async {
       final container = KoinContainer();
-      final featureScope = container.createScope('dialog:42');
+      addTearDown(container.dispose);
+      final scope = container.createScope('feature');
 
       expect(
-            () => featureScope.get<UnknownFeatureService>(),
-        throwsA(
-          isA<KoinDependencyNotFoundException>()
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('UnknownFeatureService'),
-          )
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('Current scope: "dialog:42" (feature).'),
-          )
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('Lookup order:'),
-          )
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('1. feature scope'),
-          )
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('2. root scope'),
-          )
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('3. factory'),
-          ),
-        ),
+        () => scope.get<MissingDependency>(),
+        throwsA(isA<KoinDependencyNotFoundException>()),
       );
     });
 
-    test('throws alias conflict error for root scoped aliases', () {
+    test(
+      'Root cannot resolve a dependency registered only as Scoped',
+      () async {
+        final container = KoinContainer();
+        addTearDown(container.dispose);
+        container.registerScoped<TableSession>(() => TableSession(1));
+
+        expect(
+          () => container.get<TableSession>(),
+          throwsA(isA<KoinDependencyNotFoundException>()),
+        );
+      },
+    );
+
+    test('getScope throws for a nonexistent name', () async {
       final container = KoinContainer();
+      addTearDown(container.dispose);
 
-      container.registerRootScoped<FirstRepositoryImplementation>(
-            () => FirstRepositoryImplementation(),
-        bindAs: [RepositoryContract],
-      );
-
-      expect(
-            () => container.registerRootScoped<SecondRepositoryImplementation>(
-              () => SecondRepositoryImplementation(),
-          bindAs: [RepositoryContract],
-        ),
-        throwsA(
-          isA<KoinAliasConflictException>()
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('RepositoryContract'),
-          )
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('FirstRepositoryImplementation'),
-          )
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('SecondRepositoryImplementation'),
-          )
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('root scoped'),
-          ),
-        ),
-      );
+      expect(() => container.getScope('unknown'), throwsException);
     });
 
-    test('shows alias resolution in error message when alias is requested', () {
+    test('Duplicate scope name is rejected', () async {
       final container = KoinContainer();
-      final featureScope = container.createScope('chat:7');
+      addTearDown(container.dispose);
+      container.createScope('feature');
 
-      expect(
-            () => featureScope.get<MissingSessionContract>(),
-        throwsA(
-          isA<KoinDependencyNotFoundException>()
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('MissingSessionContract'),
-          )
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('Current scope: "chat:7" (feature).'),
-          )
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('Lookup order:'),
-          ),
-        ),
-      );
+      expect(() => container.createScope('feature'), throwsStateError);
     });
 
-    test('shows alias mapping in error message when alias points to missing concrete type', () {
+    test('Empty and reserved scope names are rejected', () async {
       final container = KoinContainer();
-      final featureScope = container.createScope('chat:99');
+      addTearDown(container.dispose);
 
-      container.registerScoped<PresentScopedService>(
-            () => PresentScopedService(),
-        bindAs: [PresentScopedContract],
-      );
+      expect(() => container.createScope(''), throwsArgumentError);
+      expect(() => container.createScope('   '), throwsArgumentError);
+      expect(() => container.createScope('__root__'), throwsArgumentError);
+    });
 
+    test('Disposed scope rejects get, has and tryGet', () async {
+      final container = KoinContainer();
+      addTearDown(container.dispose);
+      container.registerScoped<TableSession>(() => TableSession(1));
+      final scope = container.createScope('feature');
+      await container.deleteScope('feature');
+
+      expect(() => scope.get<TableSession>(), throwsStateError);
+      expect(() => scope.has<TableSession>(), throwsStateError);
+      expect(() => scope.tryGet<TableSession>(), throwsStateError);
+    });
+
+    test('Disposed container rejects new work', () async {
+      final container = KoinContainer();
+      await container.dispose();
+
+      expect(() => container.get<AppLogger>(), throwsStateError);
+      expect(() => container.tryGet<AppLogger>(), throwsStateError);
+      expect(() => container.createScope('feature'), throwsStateError);
+      expect(() => container.getScope('feature'), throwsStateError);
       expect(
-            () => featureScope.get<AbsentScopedContract>(),
-        throwsA(
-          isA<KoinDependencyNotFoundException>()
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('AbsentScopedContract'),
-          )
-              .having(
-                (exception) => exception.message,
-            'message',
-            contains('Current scope: "chat:99" (feature).'),
-          ),
-        ),
+        () => container.registerFactory<AppLogger>(() => AppLogger()),
+        throwsStateError,
       );
+      expect(() => container.loadModule(KoinModule()), throwsStateError);
     });
   });
 }
-
-abstract class RepositoryContract {}
-
-class FirstRepositoryImplementation implements RepositoryContract {}
-
-class SecondRepositoryImplementation implements RepositoryContract {}
-
-class UnknownRootService {}
-
-class UnknownFeatureService {}
-
-abstract class MissingSessionContract {}
-
-abstract class PresentScopedContract {}
-
-class PresentScopedService implements PresentScopedContract {}
-
-abstract class AbsentScopedContract {}

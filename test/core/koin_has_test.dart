@@ -1,200 +1,63 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_koin/flutter_koin.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/koin_fixtures.dart';
 
 void main() {
-  group('has<T>()', () {
-    test('container has root scoped dependency by concrete type', () {
+  group('has / hasByType', () {
+    test('Root sees RootScoped and Factory, but not Scoped', () async {
       final container = KoinContainer();
+      addTearDown(container.dispose);
+      container.registerRootScoped<AppLogger>(() => AppLogger());
+      container.registerFactory<ReceiptFactory>(() => ReceiptFactory(1));
+      container.registerScoped<TableSession>(() => TableSession(1));
 
-      container.registerRootScoped<ApplicationLogger>(
-            () => ApplicationLogger(),
-      );
-
-      expect(container.has<ApplicationLogger>(), isTrue);
+      expect(container.rootScope.has<AppLogger>(), isTrue);
+      expect(container.rootScope.has<ReceiptFactory>(), isTrue);
+      expect(container.rootScope.has<TableSession>(), isFalse);
     });
 
-    test('container has root scoped dependency by alias type', () {
+    test('Feature sees its Scoped, RootScoped and Factory dependencies', () async {
       final container = KoinContainer();
+      addTearDown(container.dispose);
+      container.registerRootScoped<AppLogger>(() => AppLogger());
+      container.registerFactory<ReceiptFactory>(() => ReceiptFactory(1));
+      container.registerScoped<TableSession>(() => TableSession(1));
+      final scope = container.createScope('feature');
 
-      container.registerRootScoped<ApplicationLogger>(
-            () => ApplicationLogger(),
-        bindAs: [LoggerContract],
-      );
-
-      expect(container.has<LoggerContract>(), isTrue);
-      expect(container.has<ApplicationLogger>(), isTrue);
-    });
-
-    test('container has factory dependency by concrete type', () {
-      final container = KoinContainer();
-
-      container.registerFactory<ReceiptFactory>(
-            () => ReceiptFactory(),
-      );
-
-      expect(container.has<ReceiptFactory>(), isTrue);
-    });
-
-    test('container has factory dependency by alias type', () {
-      final container = KoinContainer();
-
-      container.registerFactory<ReceiptFactory>(
-            () => ReceiptFactory(),
-        bindAs: [ReceiptGenerator],
-      );
-
-      expect(container.has<ReceiptFactory>(), isTrue);
-      expect(container.has<ReceiptGenerator>(), isTrue);
-    });
-
-    test('container has scoped dependency by concrete type', () {
-      final container = KoinContainer();
-
-      container.registerScoped<TableSession>(
-            () => TableSession(),
-      );
-
-      expect(container.has<TableSession>(), isTrue);
-    });
-
-    test('container has scoped dependency by alias type', () {
-      final container = KoinContainer();
-
-      container.registerScoped<TableSession>(
-            () => TableSession(),
-        bindAs: [TableSessionContract],
-      );
-
-      expect(container.has<TableSession>(), isTrue);
-      expect(container.has<TableSessionContract>(), isTrue);
-    });
-
-    test('container returns false for unknown type', () {
-      final container = KoinContainer();
-
-      expect(container.has<UnknownService>(), isFalse);
-    });
-
-    test('feature scope sees its own scoped dependency', () {
-      final container = KoinContainer();
-
-      container.registerScoped<TableSession>(
-            () => TableSession(),
-      );
-
-      final scope = container.createScope('table:7');
-
-      expect(scope.has<TableSession>(), isTrue);
-    });
-
-    test('feature scope sees scoped alias', () {
-      final container = KoinContainer();
-
-      container.registerScoped<TableSession>(
-            () => TableSession(),
-        bindAs: [TableSessionContract],
-      );
-
-      final scope = container.createScope('table:7');
-
-      expect(scope.has<TableSessionContract>(), isTrue);
-      expect(scope.has<TableSession>(), isTrue);
-    });
-
-    test('feature scope sees root scoped dependency', () {
-      final container = KoinContainer();
-
-      container.registerRootScoped<ApplicationLogger>(
-            () => ApplicationLogger(),
-      );
-
-      final scope = container.createScope('dialog:42');
-
-      expect(scope.has<ApplicationLogger>(), isTrue);
-    });
-
-    test('feature scope sees root scoped alias', () {
-      final container = KoinContainer();
-
-      container.registerRootScoped<ApplicationLogger>(
-            () => ApplicationLogger(),
-        bindAs: [LoggerContract],
-      );
-
-      final scope = container.createScope('dialog:42');
-
-      expect(scope.has<LoggerContract>(), isTrue);
-    });
-
-    test('feature scope sees factory dependency', () {
-      final container = KoinContainer();
-
-      container.registerFactory<ReceiptFactory>(
-            () => ReceiptFactory(),
-      );
-
-      final scope = container.createScope('dialog:42');
-
+      expect(scope.has<AppLogger>(), isTrue);
       expect(scope.has<ReceiptFactory>(), isTrue);
+      expect(scope.has<TableSession>(), isTrue);
     });
 
-    test('feature scope sees factory alias', () {
+    test('has recognizes bindAs aliases', () async {
       final container = KoinContainer();
-
-      container.registerFactory<ReceiptFactory>(
-            () => ReceiptFactory(),
-        bindAs: [ReceiptGenerator],
-      );
-
-      final scope = container.createScope('dialog:42');
-
-      expect(scope.has<ReceiptGenerator>(), isTrue);
-    });
-
-    test('feature scope returns false for unknown dependency', () {
-      final container = KoinContainer();
-      final scope = container.createScope('dialog:42');
-
-      expect(scope.has<UnknownService>(), isFalse);
-    });
-
-    test('root scope sees root scoped and factory but not feature scoped only', () {
-      final container = KoinContainer();
-
-      container.registerRootScoped<ApplicationLogger>(
-            () => ApplicationLogger(),
-      );
-      container.registerFactory<ReceiptFactory>(
-            () => ReceiptFactory(),
+      addTearDown(container.dispose);
+      container.registerRootScoped<CoffeeShopInfo>(
+        () => CoffeeShopInfo(1),
+        bindAs: [ShopInfoRepository],
       );
       container.registerScoped<TableSession>(
-            () => TableSession(),
+        () => TableSession(1),
+        bindAs: [TableSessionContract],
       );
+      final scope = container.createScope('feature');
 
-      final rootScope = container.rootScope;
+      expect(container.rootScope.has<ShopInfoRepository>(), isTrue);
+      expect(container.rootScope.has<TableSessionContract>(), isFalse);
+      expect(scope.has<ShopInfoRepository>(), isTrue);
+      expect(scope.has<TableSessionContract>(), isTrue);
+      expect(scope.hasByType(TableSessionContract), isTrue);
+    });
 
-      expect(rootScope.has<ApplicationLogger>(), isTrue);
-      expect(rootScope.has<ReceiptFactory>(), isTrue);
-      expect(rootScope.has<TableSession>(), isFalse);
+    test('has returns false for missing dependencies', () async {
+      final container = KoinContainer();
+      addTearDown(container.dispose);
+      final scope = container.createScope('feature');
+
+      expect(container.rootScope.has<MissingDependency>(), isFalse);
+      expect(scope.has<MissingDependency>(), isFalse);
+      expect(scope.hasByType(MissingDependency), isFalse);
     });
   });
 }
-
-abstract class LoggerContract {}
-
-class ApplicationLogger implements LoggerContract {}
-
-abstract class ReceiptGenerator {
-  String createReceipt();
-}
-
-class ReceiptFactory implements ReceiptGenerator {
-  @override
-  String createReceipt() => 'receipt';
-}
-
-abstract class TableSessionContract {}
-
-class TableSession implements TableSessionContract {}
-
-class UnknownService {}

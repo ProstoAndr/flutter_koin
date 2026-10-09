@@ -1,152 +1,70 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_koin/flutter_koin.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/koin_fixtures.dart';
 
 void main() {
-  group('tryGet<T>()', () {
-    test('container returns root scoped dependency', () {
+  group('tryGet', () {
+    test('Returns null when dependency is not registered', () async {
       final container = KoinContainer();
+      addTearDown(container.dispose);
+      final scope = container.createScope('feature');
 
-      container.registerRootScoped<ApplicationLogger>(
-            () => ApplicationLogger(),
-      );
-
-      final logger = container.tryGet<ApplicationLogger>();
-
-      expect(logger, isNotNull);
-      expect(logger, isA<ApplicationLogger>());
+      expect(container.tryGet<MissingDependency>(), isNull);
+      expect(scope.tryGet<MissingDependency>(), isNull);
     });
 
-    test('container returns root scoped dependency by alias', () {
+    test('Root returns null for a Scoped-only registration', () async {
       final container = KoinContainer();
+      addTearDown(container.dispose);
+      container.registerScoped<TableSession>(() => TableSession(1));
 
-      container.registerRootScoped<ApplicationLogger>(
-            () => ApplicationLogger(),
-        bindAs: [LoggerContract],
-      );
-
-      final logger = container.tryGet<LoggerContract>();
-
-      expect(logger, isNotNull);
-      expect(logger, isA<ApplicationLogger>());
+      expect(container.tryGet<TableSession>(), isNull);
     });
 
-    test('container returns factory dependency', () {
+    test('Returns cached RootScoped instance', () async {
       final container = KoinContainer();
+      addTearDown(container.dispose);
+      container.registerRootScoped<AppLogger>(() => AppLogger());
 
-      container.registerFactory<ReceiptFactory>(
-            () => ReceiptFactory(),
-      );
-
-      final firstFactory = container.tryGet<ReceiptFactory>();
-      final secondFactory = container.tryGet<ReceiptFactory>();
-
-      expect(firstFactory, isNotNull);
-      expect(secondFactory, isNotNull);
-      expect(identical(firstFactory, secondFactory), isFalse);
+      expect(identical(container.tryGet<AppLogger>(), container.get<AppLogger>()), isTrue);
     });
 
-    test('container returns null for unknown dependency', () {
+    test('Resolves a Scoped alias from a feature scope', () async {
       final container = KoinContainer();
-
-      final unknownService = container.tryGet<UnknownService>();
-
-      expect(unknownService, isNull);
-    });
-
-    test('feature scope returns scoped dependency', () {
-      final container = KoinContainer();
-
+      addTearDown(container.dispose);
       container.registerScoped<TableSession>(
-            () => TableSession(),
-      );
-
-      final scope = container.createScope('table:7');
-
-      final firstSession = scope.tryGet<TableSession>();
-      final secondSession = scope.tryGet<TableSession>();
-
-      expect(firstSession, isNotNull);
-      expect(secondSession, isNotNull);
-      expect(identical(firstSession, secondSession), isTrue);
-    });
-
-    test('feature scope returns scoped dependency by alias', () {
-      final container = KoinContainer();
-
-      container.registerScoped<TableSession>(
-            () => TableSession(),
+        () => TableSession(1),
         bindAs: [TableSessionContract],
       );
+      final scope = container.createScope('feature');
 
-      final scope = container.createScope('table:7');
-
-      final session = scope.tryGet<TableSessionContract>();
-
-      expect(session, isNotNull);
-      expect(session, isA<TableSession>());
-    });
-
-    test('feature scope falls back to root scoped dependency', () {
-      final container = KoinContainer();
-
-      container.registerRootScoped<ApplicationLogger>(
-            () => ApplicationLogger(),
+      expect(
+        identical(scope.tryGet<TableSessionContract>(), scope.get<TableSession>()),
+        isTrue,
       );
-
-      final scope = container.createScope('dialog:42');
-
-      final logger = scope.tryGet<ApplicationLogger>();
-
-      expect(logger, isNotNull);
-      expect(logger, isA<ApplicationLogger>());
     });
 
-    test('feature scope falls back to factory dependency', () {
+    test('Factory is still transient through tryGet', () async {
       final container = KoinContainer();
+      addTearDown(container.dispose);
+      var nextId = 0;
+      container.registerFactory<ReceiptFactory>(() => ReceiptFactory(++nextId));
 
-      container.registerFactory<ReceiptFactory>(
-            () => ReceiptFactory(),
-      );
+      final first = container.tryGet<ReceiptFactory>();
+      final second = container.tryGet<ReceiptFactory>();
 
-      final scope = container.createScope('dialog:42');
-
-      final receiptFactory = scope.tryGet<ReceiptFactory>();
-
-      expect(receiptFactory, isNotNull);
-      expect(receiptFactory, isA<ReceiptFactory>());
+      expect(first, isNotNull);
+      expect(second, isNotNull);
+      expect(identical(first, second), isFalse);
     });
 
-    test('feature scope returns null for unknown dependency', () {
+    test('Does not swallow exceptions thrown by a registered factory', () async {
       final container = KoinContainer();
-      final scope = container.createScope('dialog:42');
+      addTearDown(container.dispose);
+      container.registerFactory<AppLogger>(() => throw StateError('factory failed'));
 
-      final unknownService = scope.tryGet<UnknownService>();
-
-      expect(unknownService, isNull);
-    });
-
-    test('root scope returns null for feature-scoped-only dependency', () {
-      final container = KoinContainer();
-
-      container.registerScoped<TableSession>(
-            () => TableSession(),
-      );
-
-      final value = container.rootScope.tryGet<TableSession>();
-
-      expect(value, isNull);
+      expect(() => container.tryGet<AppLogger>(), throwsStateError);
     });
   });
 }
-
-abstract class LoggerContract {}
-
-class ApplicationLogger implements LoggerContract {}
-
-abstract class TableSessionContract {}
-
-class TableSession implements TableSessionContract {}
-
-class ReceiptFactory {}
-
-class UnknownService {}

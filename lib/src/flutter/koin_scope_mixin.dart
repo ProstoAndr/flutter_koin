@@ -45,20 +45,41 @@ mixin KoinScopeMixin<T extends StatefulWidget> on State<T> {
     }
 
     final nextScopeName = scopeName;
+
     if (nextScopeName == _activeScopeName) {
       return;
     }
 
-    final oldScopeName = _activeScopeName;
-    _activeScopeName = nextScopeName;
-    _koinScope = createScope(_activeScopeName);
+    final newScope = createScope(nextScopeName);
 
-    unawaited(deleteScope(oldScopeName));
+    final oldScopeName = _activeScopeName;
+
+    _koinScope = newScope;
+    _activeScopeName = nextScopeName;
+
+    unawaited(_deleteScopeSafely(oldScopeName));
+  }
+
+  Future<void> _deleteScopeSafely(String name) async {
+    try {
+      await deleteScope(name);
+    } catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'flutter_koin',
+          context: ErrorDescription(
+            'while disposing Koin scope "$name"',
+          ),
+        ),
+      );
+    }
   }
 
   @override
   void dispose() {
-    unawaited(deleteScope(_activeScopeName));
+    unawaited(_deleteScopeSafely(_activeScopeName));
     super.dispose();
   }
 }

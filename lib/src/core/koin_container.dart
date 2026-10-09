@@ -6,7 +6,7 @@ import 'lifecycle/scope_observer.dart';
 import 'lifecycle/scope_registry.dart';
 
 class KoinContainer implements KoinDisposable {
-  final Map<Type, dynamic Function()> _factoryDependencies = {};
+  final Map<Type, dynamic Function(KoinScope)> _factoryDependencies = {};
   final Map<Type, _KoinRegistration<dynamic>> _rootScopedFactories = {};
   final Map<Type, _ScopedRegistration<dynamic>> _scopedFactories = {};
 
@@ -16,6 +16,19 @@ class KoinContainer implements KoinDisposable {
 
   late final KoinScopeRegistry _scopeRegistry = KoinScopeRegistry(this);
 
+  Future<void>? _disposeFuture;
+
+  bool get isDisposingOrDisposed => _disposeFuture != null;
+
+  void _ensureActive(String operation) {
+    if (_disposeFuture != null) {
+      throw StateError(
+        'Cannot $operation. '
+        'KoinContainer is disposing or already disposed.',
+      );
+    }
+  }
+
   KoinScope get rootScope => _scopeRegistry.rootScope;
 
   List<String> get activeScopeNames => _scopeRegistry.activeScopeNames;
@@ -23,70 +36,84 @@ class KoinContainer implements KoinDisposable {
   Iterable<KoinScope> get activeScopes => _scopeRegistry.activeScopes;
 
   void registerFactory<T>(
-      T Function() creator, {
-        List<Type> bindAs = const [],
-      }) {
-    _factoryDependencies[T] = creator;
-
+    T Function() creator, {
+    List<Type> bindAs = const [],
+  }) {
     _registerAliases(
       concreteType: T,
       aliases: bindAs,
       aliasMap: _factoryAliases,
       registrationKind: 'factory',
     );
+
+    _factoryDependencies[T] = (_) => creator();
+  }
+
+  void registerFactoryWithScope<T>(
+    T Function(KoinScope scope) creator, {
+    List<Type> bindAs = const [],
+  }) {
+    _registerAliases(
+      concreteType: T,
+      aliases: bindAs,
+      aliasMap: _factoryAliases,
+      registrationKind: 'factory',
+    );
+
+    _factoryDependencies[T] = creator;
   }
 
   void registerRootScoped<T>(
-      T Function() creator, {
-        KoinDisposeCallback<T>? disposer,
-        List<Type> bindAs = const [],
-      }) {
-    _rootScopedFactories[T] = _KoinRegistration<T>(
-      creator: creator,
-      disposer: disposer,
-    );
-
+    T Function() creator, {
+    KoinDisposeCallback<T>? disposer,
+    List<Type> bindAs = const [],
+  }) {
     _registerAliases(
       concreteType: T,
       aliases: bindAs,
       aliasMap: _rootScopedAliases,
       registrationKind: 'root scoped',
     );
+
+    _rootScopedFactories[T] = _KoinRegistration<T>(
+      creator: creator,
+      disposer: disposer,
+    );
   }
 
   void registerScoped<T>(
-      T Function() creator, {
-        KoinDisposeCallback<T>? disposer,
-        List<Type> bindAs = const [],
-      }) {
+    T Function() creator, {
+    KoinDisposeCallback<T>? disposer,
+    List<Type> bindAs = const [],
+  }) {
+    _registerAliases(
+      concreteType: T,
+      aliases: bindAs,
+      aliasMap: _scopedAliases,
+      registrationKind: 'scoped',
+    );
+
     _scopedFactories[T] = _ScopedRegistration<T>(
       creator: creator,
       disposer: disposer,
     );
-
-    _registerAliases(
-      concreteType: T,
-      aliases: bindAs,
-      aliasMap: _scopedAliases,
-      registrationKind: 'scoped',
-    );
   }
 
   void registerScopedWithScope<T>(
-      T Function(KoinScope scope) creator, {
-        KoinDisposeCallback<T>? disposer,
-        List<Type> bindAs = const [],
-      }) {
-    _scopedFactories[T] = _ScopedRegistration<T>.withScope(
-      creator: creator,
-      disposer: disposer,
-    );
-
+    T Function(KoinScope scope) creator, {
+    KoinDisposeCallback<T>? disposer,
+    List<Type> bindAs = const [],
+  }) {
     _registerAliases(
       concreteType: T,
       aliases: bindAs,
       aliasMap: _scopedAliases,
       registrationKind: 'scoped',
+    );
+
+    _scopedFactories[T] = _ScopedRegistration<T>.withScope(
+      creator: creator,
+      disposer: disposer,
     );
   }
 
@@ -96,20 +123,30 @@ class KoinContainer implements KoinDisposable {
     required Map<Type, Type> aliasMap,
     required String registrationKind,
   }) {
+    _ensureActive('register dependency "$concreteType"');
+
     for (final aliasType in aliases) {
       if (aliasType == concreteType) {
         continue;
       }
 
       final existingType = aliasMap[aliasType];
+
       if (existingType != null && existingType != concreteType) {
         throw KoinAliasConflictException(
           'Cannot bind alias "$aliasType" to "$concreteType". '
-              'It is already bound to "$existingType" in $registrationKind registrations.',
+          'It is already bound to "$existingType" '
+          'in $registrationKind registrations.',
         );
       }
+    }
 
-      aliasMap[aliasType] = concreteType;
+    aliasMap.removeWhere((alias, concrete) => concrete == concreteType);
+
+    for (final aliasType in aliases) {
+      if (aliasType != concreteType) {
+        aliasMap[aliasType] = concreteType;
+      }
     }
   }
 
@@ -159,13 +196,15 @@ class KoinContainer implements KoinDisposable {
   }
 
   Object createRootScopedValueByType(Type requestedType) {
+    _ensureActive('resolve root-scoped dependency "$requestedType"');
+
     final resolvedType = resolveRootScopedType(requestedType);
     final registration = _rootScopedFactories[resolvedType];
 
     if (registration == null) {
       throw KoinDependencyNotFoundException(
         'Root-scoped dependency "$requestedType" was not found. '
-            'Resolved type: "$resolvedType".',
+        'Resolved type: "$resolvedType".',
       );
     }
 
@@ -176,7 +215,9 @@ class KoinContainer implements KoinDisposable {
     return getRootScopedDisposerByType(T) as KoinDisposeCallback<T>?;
   }
 
-  KoinDisposeCallback<dynamic>? getRootScopedDisposerByType(Type requestedType) {
+  KoinDisposeCallback<dynamic>? getRootScopedDisposerByType(
+    Type requestedType,
+  ) {
     final resolvedType = resolveRootScopedType(requestedType);
     final registration = _rootScopedFactories[resolvedType];
 
@@ -192,14 +233,16 @@ class KoinContainer implements KoinDisposable {
   }
 
   Object createScopedValueByType(Type requestedType, KoinScope scope) {
+    _ensureActive('resolve scoped dependency "$requestedType"');
+
     final resolvedType = resolveScopedType(requestedType);
     final registration = _scopedFactories[resolvedType];
 
     if (registration == null) {
       throw KoinDependencyNotFoundException(
         'Scoped dependency "$requestedType" was not found. '
-            'Resolved type: "$resolvedType". '
-            'Scope: "${scope.name}".',
+        'Resolved type: "$resolvedType". '
+        'Scope: "${scope.name}".',
       );
     }
 
@@ -221,16 +264,25 @@ class KoinContainer implements KoinDisposable {
     return registration.disposer;
   }
 
-  KoinScope createScope(String name) => _scopeRegistry.createScope(name);
+  KoinScope createScope(String name) {
+    _ensureActive('create scope "$name"');
 
-  KoinScope getScope(String name) => _scopeRegistry.getScope(name);
+    return _scopeRegistry.createScope(name);
+  }
+
+  KoinScope getScope(String name) {
+    _ensureActive('get scope "$name"');
+    return _scopeRegistry.getScope(name);
+  }
 
   Future<void> deleteScope(String name) => _scopeRegistry.deleteScope(name);
 
   void addScopeObserver(
-      KoinScopeObserver observer, {
-        bool replayCurrentScopes = true,
-      }) {
+    KoinScopeObserver observer, {
+    bool replayCurrentScopes = true,
+  }) {
+    _ensureActive('add scope observer');
+
     _scopeRegistry.addObserver(
       observer,
       replayCurrentScopes: replayCurrentScopes,
@@ -241,49 +293,59 @@ class KoinContainer implements KoinDisposable {
     _scopeRegistry.removeObserver(observer);
   }
 
-  T get<T>() => _scopeRegistry.rootScope.get<T>();
+  T get<T>() {
+    _ensureActive('resolve dependency "$T"');
+    return rootScope.get<T>();
+  }
 
   T? tryGet<T>() {
-    if (!has<T>()) {
-      return null;
-    }
-
-    return get<T>();
+    _ensureActive('resolve dependency "$T"');
+    return rootScope.tryGet<T>();
   }
 
   T getFactory<T>() => getFactoryByType(T) as T;
 
-  Object getFactoryByType(Type requestedType) {
+  Object getFactoryByType(Type requestedType, {KoinScope? scope}) {
+    _ensureActive('resolve factory dependency "$requestedType"');
+
     final resolvedType = resolveFactoryType(requestedType);
     final creator = _factoryDependencies[resolvedType];
 
     if (creator == null) {
       throw KoinDependencyNotFoundException(
         'Factory dependency "$requestedType" was not found. '
-            'Resolved type: "$resolvedType".',
+        'Resolved type: "$resolvedType".',
       );
     }
 
-    return creator();
+    return creator(scope ?? rootScope);
   }
 
   void loadModule(KoinModule module) {
+    _ensureActive('load module');
+
     for (final callback in module.registrations) {
       callback(this);
     }
   }
 
   @override
-  Future<void> dispose() async {
-    await _scopeRegistry.dispose();
+  Future<void> dispose() {
+    return _disposeFuture ??= Future<void>.microtask(_disposeInternal);
+  }
 
-    _factoryDependencies.clear();
-    _rootScopedFactories.clear();
-    _scopedFactories.clear();
+  Future<void> _disposeInternal() async {
+    try {
+      await _scopeRegistry.dispose();
+    } finally {
+      _factoryDependencies.clear();
+      _rootScopedFactories.clear();
+      _scopedFactories.clear();
 
-    _factoryAliases.clear();
-    _rootScopedAliases.clear();
-    _scopedAliases.clear();
+      _factoryAliases.clear();
+      _rootScopedAliases.clear();
+      _scopedAliases.clear();
+    }
   }
 }
 
@@ -291,10 +353,7 @@ class _KoinRegistration<T> {
   final T Function() creator;
   final KoinDisposeCallback<T>? disposer;
 
-  const _KoinRegistration({
-    required this.creator,
-    this.disposer,
-  });
+  const _KoinRegistration({required this.creator, this.disposer});
 }
 
 class _ScopedRegistration<T> {
@@ -302,17 +361,15 @@ class _ScopedRegistration<T> {
   final T Function(KoinScope scope)? _scopeCreator;
   final KoinDisposeCallback<T>? disposer;
 
-  const _ScopedRegistration({
-    required T Function() creator,
-    this.disposer,
-  })  : _creator = creator,
-        _scopeCreator = null;
+  const _ScopedRegistration({required T Function() creator, this.disposer})
+    : _creator = creator,
+      _scopeCreator = null;
 
   const _ScopedRegistration.withScope({
     required T Function(KoinScope scope) creator,
     this.disposer,
-  })  : _creator = null,
-        _scopeCreator = creator;
+  }) : _creator = null,
+       _scopeCreator = creator;
 
   T create(KoinScope scope) {
     if (_scopeCreator != null) {

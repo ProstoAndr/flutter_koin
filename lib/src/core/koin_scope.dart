@@ -2,10 +2,7 @@ import 'errors/koin_exceptions.dart';
 import 'koin_container.dart';
 import 'lifecycle/koin_disposable.dart';
 
-enum KoinScopeKind {
-  root,
-  feature,
-}
+enum KoinScopeKind { root, feature }
 
 class KoinScope implements KoinDisposable {
   final String name;
@@ -16,39 +13,48 @@ class KoinScope implements KoinDisposable {
   final Map<Type, dynamic> _cachedObjects = {};
   final Map<Type, KoinDisposeCallback<dynamic>> _disposers = {};
 
-  KoinScope._(
-      this.name,
-      this._container,
-      this._kind, [
-        this._parent,
-      ]);
+  bool _isDisposed = false;
+  Future<void>? _disposeFuture;
+  Future<void>? _clearFuture;
+
+  KoinScope._(this.name, this._container, this._kind, [this._parent]);
 
   factory KoinScope.root(KoinContainer container) {
-    return KoinScope._(
-      '__root__',
-      container,
-      KoinScopeKind.root,
-    );
+    return KoinScope._('__root__', container, KoinScopeKind.root);
   }
 
   factory KoinScope.feature(
-      String name,
-      KoinContainer container,
-      KoinScope rootScope,
-      ) {
-    return KoinScope._(
-      name,
-      container,
-      KoinScopeKind.feature,
-      rootScope,
-    );
+    String name,
+    KoinContainer container,
+    KoinScope rootScope,
+  ) {
+    return KoinScope._(name, container, KoinScopeKind.feature, rootScope);
   }
 
   bool get isRoot => _kind == KoinScopeKind.root;
 
   bool get isFeature => _kind == KoinScopeKind.feature;
 
+  void _ensureNotDisposed() {
+    if (_isDisposed) {
+      throw StateError('KoinScope "$name" has already been disposed.');
+    }
+
+    if (_container.isDisposingOrDisposed) {
+      throw StateError(
+        'Cannot use KoinScope "$name". '
+        'KoinContainer is disposing or already disposed.',
+      );
+    }
+
+    if (_clearFuture != null) {
+      throw StateError('Cannot use KoinScope "$name" while it is clearing.');
+    }
+  }
+
   T get<T>() {
+    _ensureNotDisposed();
+
     final requestedType = T;
 
     if (isFeature) {
@@ -63,6 +69,7 @@ class KoinScope implements KoinDisposable {
           requestedType,
           this,
         );
+
         final disposer = _container.getScopedDisposerByType(requestedType);
 
         _cacheValue(
@@ -74,15 +81,12 @@ class KoinScope implements KoinDisposable {
         return scopedValue as T;
       }
 
-      final parentScope = _parent;
-      if (parentScope != null) {
-        try {
-          return parentScope.get<T>();
-        } on KoinDependencyNotFoundException {
-          throw KoinDependencyNotFoundException(
-            _buildDependencyNotFoundMessage(requestedType),
-          );
-        }
+      if (_container.hasRootScopedType(requestedType)) {
+        return _parent!.get<T>();
+      }
+
+      if (_container.hasFactoryType(requestedType)) {
+        return _container.getFactoryByType(requestedType, scope: this) as T;
       }
 
       throw KoinDependencyNotFoundException(
@@ -102,6 +106,7 @@ class KoinScope implements KoinDisposable {
       final rootScopedValue = _container.createRootScopedValueByType(
         requestedType,
       );
+
       final disposer = _container.getRootScopedDisposerByType(requestedType);
 
       _cacheValue(
@@ -114,7 +119,7 @@ class KoinScope implements KoinDisposable {
     }
 
     if (_container.hasFactoryType(requestedType)) {
-      return _container.getFactoryByType(requestedType) as T;
+      return _container.getFactoryByType(requestedType, scope: this) as T;
     }
 
     throw KoinDependencyNotFoundException(
@@ -133,6 +138,8 @@ class KoinScope implements KoinDisposable {
   bool has<T>() => hasByType(T);
 
   bool hasByType(Type requestedType) {
+    _ensureNotDisposed();
+
     if (isFeature) {
       if (_container.hasScopedType(requestedType)) {
         return true;
@@ -163,37 +170,36 @@ class KoinScope implements KoinDisposable {
     );
     final hasFactoryRegistration = _container.hasFactoryType(requestedType);
 
-    final buffer = StringBuffer()
-      ..writeln('Dependency "$requestedType" was not found.')
-      ..writeln(
-        'Current scope: "$name" (${isRoot ? 'root' : 'feature'}).',
-      );
+    final buffer =
+        StringBuffer()
+          ..writeln('Dependency "$requestedType" was not found.')
+          ..writeln('Current scope: "$name" (${isRoot ? 'root' : 'feature'}).');
 
     if (isFeature) {
       buffer
         ..writeln('Lookup order:')
         ..writeln(
           '1. feature scope -> ${_formatResolvedType(requestedType, resolvedScopedType)} '
-              '(registered: $hasScopedRegistration)',
+          '(registered: $hasScopedRegistration)',
         )
         ..writeln(
           '2. root scope -> ${_formatResolvedType(requestedType, resolvedRootScopedType)} '
-              '(registered: $hasRootScopedRegistration)',
+          '(registered: $hasRootScopedRegistration)',
         )
         ..writeln(
           '3. factory -> ${_formatResolvedType(requestedType, resolvedFactoryType)} '
-              '(registered: $hasFactoryRegistration)',
+          '(registered: $hasFactoryRegistration)',
         );
     } else {
       buffer
         ..writeln('Lookup order:')
         ..writeln(
           '1. root scope -> ${_formatResolvedType(requestedType, resolvedRootScopedType)} '
-              '(registered: $hasRootScopedRegistration)',
+          '(registered: $hasRootScopedRegistration)',
         )
         ..writeln(
           '2. factory -> ${_formatResolvedType(requestedType, resolvedFactoryType)} '
-              '(registered: $hasFactoryRegistration)',
+          '(registered: $hasFactoryRegistration)',
         );
     }
 
@@ -220,28 +226,62 @@ class KoinScope implements KoinDisposable {
     }
   }
 
-  Future<void> clear() async {
-    final entries = _cachedObjects.entries.toList().reversed;
-
-    for (final entry in entries) {
-      final type = entry.key;
-      final value = entry.value;
-
-      final disposer = _disposers[type];
-      if (disposer != null) {
-        await disposer(value);
-        continue;
-      }
-
-      if (value is KoinDisposable) {
-        await value.dispose();
-      }
+  Future<void> clear() {
+    if (_disposeFuture != null) {
+      return _disposeFuture!;
     }
 
-    _disposers.clear();
-    _cachedObjects.clear();
+    return _clearFuture ??= Future<void>.microtask(_clearInternal).whenComplete(
+      () {
+        _clearFuture = null;
+      },
+    );
+  }
+
+  Future<void> _clearInternal() async {
+    final entries = _cachedObjects.entries.toList().reversed;
+
+    Object? firstError;
+    StackTrace? firstStackTrace;
+
+    try {
+      for (final entry in entries) {
+        final type = entry.key;
+        final value = entry.value;
+
+        try {
+          final disposer = _disposers[type];
+
+          if (disposer != null) {
+            await disposer(value);
+          } else if (value is KoinDisposable) {
+            await value.dispose();
+          }
+        } catch (error, stackTrace) {
+          firstError ??= error;
+          firstStackTrace ??= stackTrace;
+        }
+      }
+    } finally {
+      _disposers.clear();
+      _cachedObjects.clear();
+    }
+
+    if (firstError != null) {
+      Error.throwWithStackTrace(
+        firstError,
+        firstStackTrace ?? StackTrace.current,
+      );
+    }
   }
 
   @override
-  Future<void> dispose() => clear();
+  Future<void> dispose() {
+    if (_disposeFuture != null) {
+      return _disposeFuture!;
+    }
+
+    _isDisposed = true;
+    return _disposeFuture = clear();
+  }
 }

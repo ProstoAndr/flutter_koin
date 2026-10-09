@@ -11,6 +11,12 @@ KoinContainer get koinContainer =>
     (throw Exception("Koin not started. Call startKoin(...) first."));
 
 KoinContainer startKoin(List<KoinModule> modules) {
+  if (_globalContainer != null) {
+    throw StateError(
+      'Koin is already started. Call stopKoin() before starting again.',
+    );
+  }
+
   final container = KoinContainer();
 
   for (final module in modules) {
@@ -51,10 +57,16 @@ void removeScopeObserver(KoinScopeObserver observer) {
 
 Future<void> stopKoin() async {
   final container = _globalContainer;
+
   if (container == null) {
     return;
   }
 
-  await container.dispose();
-  _globalContainer = null;
+  try {
+    await container.dispose();
+  } finally {
+    if (identical(_globalContainer, container)) {
+      _globalContainer = null;
+    }
+  }
 }

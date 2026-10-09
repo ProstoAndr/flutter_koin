@@ -156,9 +156,9 @@ class HomePage extends StatelessWidget {
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => KoinScopeHost(
+                  builder: (_) => const KoinScopeHost(
                     scopeName: 'table:7',
-                    child: const TablePage(tableName: 'Table 7'),
+                    child: TablePage(tableName: 'Table 7'),
                   ),
                 ),
               );
