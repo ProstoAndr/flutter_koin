@@ -4,7 +4,7 @@ All notable changes to `flutter_koin` will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
-## [1.0.0] - Unreleased
+## [1.0.0] - 2026-10-09
 
 ### Added
 
